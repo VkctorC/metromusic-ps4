@@ -1,5 +1,5 @@
 TITLE       := MetroMusic CustomMusicCore Probe
-VERSION     := 0.12
+VERSION     := 0.13
 TITLE_ID    := BREW00991
 CONTENT_ID  := IV0000-BREW00991_00-METROMUSICPROBE0
 
@@ -35,11 +35,13 @@ $(INTDIR)/%.o: %.c
 	@mkdir -p $(INTDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
-# Reuse the harmless packaging assets from OpenOrbis' hello_world sample.
-sce_sys/icon0.png:
-	@mkdir -p sce_sys
-	cp $(TOOLCHAIN)/samples/hello_world/sce_sys/icon0.png $@
+sce_module/libc.prx:
+	@mkdir -p sce_module
+	cp $(TOOLCHAIN)/bin/data/modules/libc.prx $@
 
+sce_module/libSceFios2.prx:
+	@mkdir -p sce_module
+	cp $(TOOLCHAIN)/bin/data/modules/libSceFios2.prx $@
 
 sce_sys/param.sfo: Makefile
 	@mkdir -p sce_sys
@@ -55,11 +57,11 @@ sce_sys/param.sfo: Makefile
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
 
-pkg.gp4: eboot.bin sce_sys/param.sfo sce_sys/icon0.png
+pkg.gp4: eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx
 	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
 
 $(CONTENT_ID).pkg: pkg.gp4
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
 
 clean:
-	rm -rf build eboot.bin pkg.gp4 sce_sys $(CONTENT_ID).pkg
+	rm -rf build eboot.bin pkg.gp4 sce_module $(CONTENT_ID).pkg
