@@ -1,5 +1,5 @@
 TITLE       := MetroMusic CustomMusicCore Probe
-VERSION     := 0.10
+VERSION     := 0.11
 TITLE_ID    := BREW00991
 CONTENT_ID  := IV0000-BREW00991_00-METROMUSICPROBE0
 

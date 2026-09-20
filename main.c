@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -8,105 +7,170 @@
 
 #define LOG_PATH "/data/metro_music_probe.log"
 
-typedef int (*NotifyFn)(int, char *);
+static int32_t g_log = -1;
 
-static FILE *g_log = NULL;
+static void log_text(const char *text)
+{
+    if (g_log < 0)
+        return;
 
-static void log_line(const char *label, long long value) {
-    if (!g_log) return;
-    fprintf(g_log, "%s: 0x%llx (%lld)\n", label, (unsigned long long)value, value);
-    fflush(g_log);
+    sceKernelWrite(g_log, text, strlen(text));
 }
 
-static void log_symbol(uint32_t handle, const char *name, int *ok_count) {
+static void log_value(const char *name, int64_t value)
+{
+    char buf[256];
+
+    snprintf(
+        buf,
+        sizeof(buf),
+        "%s = 0x%llx (%lld)\n",
+        name,
+        (unsigned long long)value,
+        (long long)value
+    );
+
+    log_text(buf);
+}
+
+static void probe_symbol(int32_t handle, const char *name)
+{
+    char buf[256];
     void *addr = NULL;
-    int32_t ret = sceKernelDlsym((int32_t)handle, name, &addr);
-    if (g_log) {
-        fprintf(g_log, "dlsym %-52s ret=0x%08x addr=%p\n", name, (uint32_t)ret, addr);
-        fflush(g_log);
-    }
-    if (ret == 0 && addr != NULL && ok_count) (*ok_count)++;
+
+    snprintf(buf, sizeof(buf),
+             "ANTES dlsym: %s\n", name);
+    log_text(buf);
+
+    int32_t ret = sceKernelDlsym(handle, name, &addr);
+
+    snprintf(
+        buf,
+        sizeof(buf),
+        "DEPOIS dlsym: %-48s ret=0x%08x addr=%p\n",
+        name,
+        (uint32_t)ret,
+        addr
+    );
+
+    log_text(buf);
 }
 
-static NotifyFn get_notify(void) {
-    int res = 0;
-    uint32_t h = sceKernelLoadStartModule("/system/common/lib/libSceSysUtil.sprx", 0, NULL, 0, NULL, &res);
-    if ((int32_t)h < 0) return NULL;
-    void *addr = NULL;
-    if (sceKernelDlsym((int32_t)h, "sceSysUtilSendSystemNotificationWithText", &addr) != 0)
-        return NULL;
-    return (NotifyFn)addr;
-}
+int main(void)
+{
+    /*
+     * GoldHEN usa sceKernelOpen para /data porque fopen()
+     * pode não ter permissão nesse caminho.
+     */
+    g_log = sceKernelOpen(
+        LOG_PATH,
+        0x200 | 0x001,
+        0777
+    );
 
-int main(void) {
-    g_log = fopen(LOG_PATH, "w");
-    if (g_log) {
-        fprintf(g_log, "MetroMusic CustomMusicCore probe v0.1\n");
-        fprintf(g_log, "Firmware target: PS4 13.52 (runtime probe)\n\n");
-        fflush(g_log);
+    if (g_log < 0)
+    {
+        /*
+         * Se nem /data funcionar, o app fica vivo 20 s.
+         * Assim distinguimos erro de escrita de crash no loader.
+         */
+        sleep(20);
+        return 0;
     }
 
-    NotifyFn notify = get_notify();
-    if (notify) notify(222, "MetroMusic Probe: iniciando CustomMusicCore");
+    log_text(
+        "====================================\n"
+        "MetroMusic CustomMusicCore Probe v0.11\n"
+        "PS4 firmware alvo: 13.52\n"
+        "====================================\n\n"
+    );
 
+    log_text("STAGE 0: main() iniciado\n");
 
+    /* ===================================================== */
+    /* CustomMusicCore                                       */
+    /* ===================================================== */
 
-    int module_res = 0;
-    uint32_t core = sceKernelLoadStartModule(
+    log_text(
+        "STAGE 1: antes de carregar "
+        "libSceCustomMusicCore.sprx\n"
+    );
+
+    int32_t core = sceKernelLoadStartModule(
         "/system/common/lib/libSceCustomMusicCore.sprx",
-        0, NULL, 0, NULL, &module_res);
-    log_line("CustomMusicCore handle", (int32_t)core);
-    log_line("CustomMusicCore load result", module_res);
+        0,
+        NULL,
+        0,
+        NULL,
+        NULL
+    );
 
-    int service_res = 0;
-    uint32_t service = sceKernelLoadStartModule(
-        "/system/common/lib/libSceCustomMusicService.sprx",
-        0, NULL, 0, NULL, &service_res);
-    log_line("CustomMusicService handle", (int32_t)service);
-    log_line("CustomMusicService load result", service_res);
+    log_text("STAGE 2: voltou do load CustomMusicCore\n");
+    log_value("CustomMusicCore handle", core);
 
-    int ok = 0;
-    if ((int32_t)core >= 0) {
-        static const char *symbols[] = {
-            "sceCustomMusicCoreBgmOutput",
-            "sceCustomMusicCoreBgmStop",
-            "sceCustomMusicCoreGetBgmAuthorityStatus",
-            "sceCustomMusicCoreGetSystemAudioVolume",
-            "sceCustomMusicCoreImposeSetPlayStatusInfo2",
-            "sceCustomMusicCoreImposeSetSpTrackInfo",
-            "sceCustomMusicCoreRegisterAppExFunctionTable",
-            "sceCustomMusicCoreRegisterSpImposeFunctionTable",
-            "sceCustomMusicCoreSendEvent",
-            "sceCustomMusicCoreSendMulticastEvent",
+    if (core >= 0)
+    {
+        log_text(
+            "\n--- TESTANDO EXPORTS CustomMusicCore ---\n"
+        );
 
-            /* Semantic names seen in Spotify strings. These may have
-               different exported names/NIDs on retail firmware. */
-            "sceCustomMusicCoreNotifyPlaybackHasStarted",
-            "sceCustomMusicCoreRegisterImposeFunctionTable",
-            "sceCustomMusicCoreSendSpErrorMessage",
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreBgmStop"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreBgmOutput"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreGetBgmAuthorityStatus"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreImposeSetSpTrackInfo"
+        );
+
+        probe_symbol(
+            core,
             "sceCustomMusicCoreStartToAcceptUserOperation"
-        };
-        size_t count = sizeof(symbols) / sizeof(symbols[0]);
-        if (g_log) fprintf(g_log, "\n--- symbol probe ---\n");
-        for (size_t i = 0; i < count; ++i)
-            log_symbol(core, symbols[i], &ok);
+        );
     }
 
-    if (g_log) {
-        fprintf(g_log, "\nResolved named symbols: %d\n", ok);
-        fprintf(g_log, "Probe finished. No CustomMusicCore function was invoked.\n");
-        fflush(g_log);
-    }
+    /* ===================================================== */
+    /* CustomMusicService                                    */
+    /* ===================================================== */
 
-    if (notify) {
-        char msg[160];
-        snprintf(msg, sizeof(msg), "MetroMusic Probe: %d simbolos resolvidos. Log em /data/metro_music_probe.log", ok);
-        notify(222, msg);
-    }
+    log_text(
+        "\nSTAGE 3: antes de carregar "
+        "libSceCustomMusicService.sprx\n"
+    );
 
-    if (g_log) fclose(g_log);
+    int32_t service = sceKernelLoadStartModule(
+        "/system/common/lib/libSceCustomMusicService.sprx",
+        0,
+        NULL,
+        0,
+        NULL,
+        NULL
+    );
 
-    /* Keep the app alive briefly so the notification/log can be observed. */
-    sleep(8);
+    log_text("STAGE 4: voltou do load CustomMusicService\n");
+    log_value("CustomMusicService handle", service);
+
+    log_text(
+        "\nSTAGE 5: probe terminou normalmente\n"
+        "Mantendo processo vivo por 20 segundos...\n"
+    );
+
+    sleep(20);
+
+    log_text("Encerrando probe.\n");
+
+    sceKernelClose(g_log);
+
     return 0;
 }
