@@ -16,24 +16,93 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Pull OpenOrbis toolchain
-        run: docker pull openorbisofficial/toolchain:latest
-
       - name: Build PS4 PKG
         run: |
           docker run --rm \
             --user 0 \
-            -w /workspace \
             -v "$GITHUB_WORKSPACE:/workspace" \
-            openorbisofficial/toolchain:latest \
-            make
+            -w /workspace \
+            ubuntu:20.04 \
+            bash -lc '
+              set -e
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y \
+                build-essential \
+                clang-12 \
+                lld-12 \
+                libicu66 \
+                libssl1.1 \
+                ca-certificates \
+                curl \
+                tar
+
+              update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 100
+              update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-12 100
+
+              echo "Baixando OpenOrbis v0.5.4..."
+
+              mkdir -p /tmp/openorbis
+
+              curl -fL \
+                https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
+                -o /tmp/openorbis.tar.gz
+
+              tar -xzf /tmp/openorbis.tar.gz \
+                -C /tmp/openorbis
+
+              OO_PS4_TOOLCHAIN=$(find /tmp/openorbis \
+                -type f \
+                -path "*/bin/linux/create-fself" \
+                -print \
+                | head -n1 \
+                | sed "s#/bin/linux/create-fself##")
+
+              if [ -z "$OO_PS4_TOOLCHAIN" ]; then
+                echo "ERRO: create-fself não encontrado"
+                find /tmp/openorbis -maxdepth 5 -type f | head -100
+                exit 1
+              fi
+
+              export OO_PS4_TOOLCHAIN
+
+              echo "Toolchain: $OO_PS4_TOOLCHAIN"
+
+              chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/* || true
+
+              echo "Ferramentas:"
+              ls -lah "$OO_PS4_TOOLCHAIN/bin/linux/"
+
+              echo "create-fself:"
+              "$OO_PS4_TOOLCHAIN/bin/linux/create-fself" -h || true
+
+              # Assets básicos do pacote
+              mkdir -p sce_sys/about
+
+              curl -fL \
+                https://raw.githubusercontent.com/OpenOrbis/OpenOrbis-PS4-Toolchain/master/samples/hello_world/sce_sys/icon0.png \
+                -o sce_sys/icon0.png
+
+              curl -fL \
+                https://raw.githubusercontent.com/OpenOrbis/OpenOrbis-PS4-Toolchain/master/samples/hello_world/sce_sys/about/right.sprx \
+                -o sce_sys/about/right.sprx
+
+              make clean || true
+              make
+            '
 
       - name: Show outputs
         run: |
-          ls -lah
-          find . -maxdepth 3 -type f \( -name '*.pkg' -o -name 'eboot.bin' -o -name '*.elf' \) -print
+          echo "=== OUTPUTS ==="
+          find . -maxdepth 3 -type f \( \
+            -name '*.pkg' -o \
+            -name 'eboot.bin' -o \
+            -name '*.elf' \
+          \) -print -exec ls -lh {} \;
 
-      - name: Upload PKG artifact
+      - name: Upload PKG
         uses: actions/upload-artifact@v4
         with:
           name: MetroMusic-CustomMusicCore-Probe-v0.1
