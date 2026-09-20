@@ -5,9 +5,7 @@
 #include <unistd.h>
 
 #include <orbis/libkernel.h>
-#include <orbis/Sysmodule.h>
 
-#define SCE_SYSMODULE_CUSTOM_MUSIC_CORE 0x00E6
 #define LOG_PATH "/data/metro_music_probe.log"
 
 typedef int (*NotifyFn)(int, char *);
@@ -51,11 +49,7 @@ int main(void) {
     NotifyFn notify = get_notify();
     if (notify) notify(222, "MetroMusic Probe: iniciando CustomMusicCore");
 
-    int32_t loaded_before = sceSysmoduleIsLoaded((enum OrbisSysModule)SCE_SYSMODULE_CUSTOM_MUSIC_CORE);
-    log_line("sceSysmoduleIsLoaded(0xE6) before", loaded_before);
 
-    int32_t sysret = sceSysmoduleLoadModule((enum OrbisSysModule)SCE_SYSMODULE_CUSTOM_MUSIC_CORE);
-    log_line("sceSysmoduleLoadModule(0xE6)", sysret);
 
     int module_res = 0;
     uint32_t core = sceKernelLoadStartModule(

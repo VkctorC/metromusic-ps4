@@ -3,7 +3,7 @@ VERSION     := 0.10
 TITLE_ID    := BREW00991
 CONTENT_ID  := IV0000-BREW00991_00-METROMUSICPROBE0
 
-LIBS        := -lc -lkernel -lSceSysmodule_stub
+LIBS        := -lc -lkernel
 
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 INTDIR      := build
