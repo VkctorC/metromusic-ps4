@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <orbis/libkernel.h>
 
@@ -9,15 +10,37 @@
 
 static int32_t g_log = -1;
 
+/*
+ * Escreve simultaneamente:
+ *
+ * 1. stdout -> GoldHEN Klog / porta 3232
+ * 2. /data/metro_music_probe.log, caso seja permitido
+ */
 static void log_text(const char *text)
 {
-    if (g_log < 0)
-        return;
+    /*
+     * GoldHEN redireciona TTY/stdout para o Klog.
+     */
+    printf("%s", text);
+    fflush(stdout);
 
-    sceKernelWrite(g_log, text, strlen(text));
+    /*
+     * Arquivo é apenas uma segunda saída.
+     * Se não tivermos permissão, seguimos normalmente.
+     */
+    if (g_log >= 0) {
+        sceKernelWrite(
+            g_log,
+            text,
+            strlen(text)
+        );
+    }
 }
 
-static void log_value(const char *name, int64_t value)
+static void log_value(
+    const char *name,
+    int64_t value
+)
 {
     char buf[256];
 
@@ -33,16 +56,28 @@ static void log_value(const char *name, int64_t value)
     log_text(buf);
 }
 
-static void probe_symbol(int32_t handle, const char *name)
+static void probe_symbol(
+    int32_t handle,
+    const char *name
+)
 {
-    char buf[256];
+    char buf[320];
     void *addr = NULL;
 
-    snprintf(buf, sizeof(buf),
-             "ANTES dlsym: %s\n", name);
+    snprintf(
+        buf,
+        sizeof(buf),
+        "ANTES dlsym: %s\n",
+        name
+    );
+
     log_text(buf);
 
-    int32_t ret = sceKernelDlsym(handle, name, &addr);
+    int32_t ret = sceKernelDlsym(
+        handle,
+        name,
+        &addr
+    );
 
     snprintf(
         buf,
@@ -59,42 +94,83 @@ static void probe_symbol(int32_t handle, const char *name)
 int main(void)
 {
     /*
-     * GoldHEN usa sceKernelOpen para /data porque fopen()
-     * pode não ter permissão nesse caminho.
+     * Desativa buffering do stdout.
+     * Cada mensagem deve ir imediatamente ao Klog.
+     */
+    setvbuf(
+        stdout,
+        NULL,
+        _IONBF,
+        0
+    );
+
+    printf(
+        "\n"
+        "========================================\n"
+        " MetroMusic Probe v0.12 - BOOT\n"
+        "========================================\n"
+    );
+
+    /*
+     * Tentativa secundária de gravar arquivo.
+     *
+     * IMPORTANTE:
+     * Falhar aqui NÃO encerra mais o programa.
      */
     g_log = sceKernelOpen(
         LOG_PATH,
-        0x200 | 0x001,
+        O_WRONLY | O_CREAT | O_TRUNC,
         0777
     );
 
-    if (g_log < 0)
-    {
-        /*
-         * Se nem /data funcionar, o app fica vivo 20 s.
-         * Assim distinguimos erro de escrita de crash no loader.
-         */
-        sleep(20);
-        return 0;
-    }
-
     log_text(
-        "====================================\n"
-        "MetroMusic CustomMusicCore Probe v0.11\n"
-        "PS4 firmware alvo: 13.52\n"
-        "====================================\n\n"
+        "\n"
+        "========================================\n"
+        " MetroMusic CustomMusicCore Probe v0.12\n"
+        " PS4 firmware alvo: 13.52\n"
+        "========================================\n\n"
     );
 
-    log_text("STAGE 0: main() iniciado\n");
+    log_value(
+        "Log file descriptor",
+        g_log
+    );
 
-    /* ===================================================== */
-    /* CustomMusicCore                                       */
-    /* ===================================================== */
+    if (g_log < 0) {
+        log_text(
+            "AVISO: nao foi possivel criar o log em /data.\n"
+            "Continuando exclusivamente pelo GoldHEN Klog.\n\n"
+        );
+    }
+    else {
+        log_text(
+            "Arquivo /data/metro_music_probe.log aberto com sucesso.\n\n"
+        );
+    }
+
+    /*
+     * ====================================================
+     * STAGE 0
+     * ====================================================
+     */
 
     log_text(
+        "STAGE 0: main() iniciado normalmente\n"
+    );
+
+    /*
+     * ====================================================
+     * CUSTOM MUSIC CORE
+     * ====================================================
+     */
+
+    log_text(
+        "\n"
         "STAGE 1: antes de carregar "
         "libSceCustomMusicCore.sprx\n"
     );
+
+    int32_t core_result = 0;
 
     int32_t core = sceKernelLoadStartModule(
         "/system/common/lib/libSceCustomMusicCore.sprx",
@@ -102,21 +178,34 @@ int main(void)
         NULL,
         0,
         NULL,
-        NULL
+        &core_result
     );
 
-    log_text("STAGE 2: voltou do load CustomMusicCore\n");
-    log_value("CustomMusicCore handle", core);
+    log_text(
+        "STAGE 2: voltou de "
+        "sceKernelLoadStartModule(CustomMusicCore)\n"
+    );
 
-    if (core >= 0)
-    {
+    log_value(
+        "CustomMusicCore handle",
+        core
+    );
+
+    log_value(
+        "CustomMusicCore result",
+        core_result
+    );
+
+    /*
+     * Só testa exports se o módulo carregou.
+     */
+    if (core >= 0) {
+
         log_text(
-            "\n--- TESTANDO EXPORTS CustomMusicCore ---\n"
-        );
-
-        probe_symbol(
-            core,
-            "sceCustomMusicCoreBgmStop"
+            "\n"
+            "========================================\n"
+            " TESTANDO EXPORTS CustomMusicCore\n"
+            "========================================\n"
         );
 
         probe_symbol(
@@ -126,7 +215,22 @@ int main(void)
 
         probe_symbol(
             core,
+            "sceCustomMusicCoreBgmStop"
+        );
+
+        probe_symbol(
+            core,
             "sceCustomMusicCoreGetBgmAuthorityStatus"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreGetSystemAudioVolume"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreImposeSetPlayStatusInfo2"
         );
 
         probe_symbol(
@@ -136,18 +240,59 @@ int main(void)
 
         probe_symbol(
             core,
+            "sceCustomMusicCoreRegisterAppExFunctionTable"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreRegisterSpImposeFunctionTable"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreRegisterImposeFunctionTable"
+        );
+
+        probe_symbol(
+            core,
             "sceCustomMusicCoreStartToAcceptUserOperation"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreNotifyPlaybackHasStarted"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreSendEvent"
+        );
+
+        probe_symbol(
+            core,
+            "sceCustomMusicCoreSendMulticastEvent"
+        );
+    }
+    else {
+        log_text(
+            "\nCustomMusicCore nao foi carregado.\n"
+            "Pulando teste de exports.\n"
         );
     }
 
-    /* ===================================================== */
-    /* CustomMusicService                                    */
-    /* ===================================================== */
+    /*
+     * ====================================================
+     * CUSTOM MUSIC SERVICE
+     * ====================================================
+     */
 
     log_text(
-        "\nSTAGE 3: antes de carregar "
+        "\n"
+        "STAGE 3: antes de carregar "
         "libSceCustomMusicService.sprx\n"
     );
+
+    int32_t service_result = 0;
 
     int32_t service = sceKernelLoadStartModule(
         "/system/common/lib/libSceCustomMusicService.sprx",
@@ -155,22 +300,52 @@ int main(void)
         NULL,
         0,
         NULL,
-        NULL
+        &service_result
     );
-
-    log_text("STAGE 4: voltou do load CustomMusicService\n");
-    log_value("CustomMusicService handle", service);
 
     log_text(
-        "\nSTAGE 5: probe terminou normalmente\n"
-        "Mantendo processo vivo por 20 segundos...\n"
+        "STAGE 4: voltou de "
+        "sceKernelLoadStartModule(CustomMusicService)\n"
     );
 
-    sleep(20);
+    log_value(
+        "CustomMusicService handle",
+        service
+    );
 
-    log_text("Encerrando probe.\n");
+    log_value(
+        "CustomMusicService result",
+        service_result
+    );
 
-    sceKernelClose(g_log);
+    /*
+     * ====================================================
+     * FIM
+     * ====================================================
+     */
+
+    log_text(
+        "\n"
+        "========================================\n"
+        "STAGE 5: probe terminou normalmente\n"
+        "Nenhuma funcao CustomMusicCore foi executada.\n"
+        "Apenas load + dlsym.\n"
+        "========================================\n\n"
+    );
+
+    log_text(
+        "Mantendo aplicativo vivo por 30 segundos...\n"
+    );
+
+    sleep(30);
+
+    log_text(
+        "MetroMusic Probe encerrando normalmente.\n"
+    );
+
+    if (g_log >= 0) {
+        sceKernelClose(g_log);
+    }
 
     return 0;
 }
