@@ -42,16 +42,13 @@ jobs:
               update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 100
               update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-12 100
 
-              echo "Baixando OpenOrbis v0.5.4..."
-
               mkdir -p /tmp/openorbis
 
               curl -fL \
                 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
                 -o /tmp/openorbis.tar.gz
 
-              tar -xzf /tmp/openorbis.tar.gz \
-                -C /tmp/openorbis
+              tar -xzf /tmp/openorbis.tar.gz -C /tmp/openorbis
 
               OO_PS4_TOOLCHAIN=$(find /tmp/openorbis \
                 -type f \
@@ -62,40 +59,24 @@ jobs:
 
               if [ -z "$OO_PS4_TOOLCHAIN" ]; then
                 echo "ERRO: create-fself não encontrado"
-                find /tmp/openorbis -maxdepth 5 -type f | head -100
                 exit 1
               fi
 
               export OO_PS4_TOOLCHAIN
 
-              echo "Toolchain: $OO_PS4_TOOLCHAIN"
-
               chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/* || true
 
-              echo "Ferramentas:"
-              ls -lah "$OO_PS4_TOOLCHAIN/bin/linux/"
-
-              echo "create-fself:"
-              "$OO_PS4_TOOLCHAIN/bin/linux/create-fself" -h || true
-
-              # Assets básicos do pacote
-              mkdir -p sce_sys/about
+              mkdir -p sce_sys
 
               curl -fL \
                 https://raw.githubusercontent.com/OpenOrbis/OpenOrbis-PS4-Toolchain/master/samples/hello_world/sce_sys/icon0.png \
                 -o sce_sys/icon0.png
 
-              curl -fL \
-                https://raw.githubusercontent.com/OpenOrbis/OpenOrbis-PS4-Toolchain/master/samples/hello_world/sce_sys/about/right.sprx \
-                -o sce_sys/about/right.sprx
-
-              make clean || true
               make
             '
 
       - name: Show outputs
         run: |
-          echo "=== OUTPUTS ==="
           find . -maxdepth 3 -type f \( \
             -name '*.pkg' -o \
             -name 'eboot.bin' -o \
