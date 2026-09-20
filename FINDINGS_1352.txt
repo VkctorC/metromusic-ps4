@@ -1,0 +1,23 @@
+Firmware modules supplied from PS4 13.52
+
+libSceCustomMusicCore.sprx
+SHA-256: d8c8b5ed900c25f2ee66d2c6ebb93e84f659b6cae7087e75cba80b88bc8d56e4
+Size: 229632 bytes
+
+libSceCustomMusicService.sprx
+SHA-256: 13667cea8f66f01d61c8830a0904792f3c7eb9df6f481ce1efbde86316b3ed19
+Size: 153104 bytes
+
+Known Spotify-imported Core API names whose NIDs match firmware 13.52 exports:
+- sceCustomMusicCoreBgmOutput
+- sceCustomMusicCoreBgmStop
+- sceCustomMusicCoreGetBgmAuthorityStatus
+- sceCustomMusicCoreGetSystemAudioVolume
+- sceCustomMusicCoreImposeSetPlayStatusInfo2
+- sceCustomMusicCoreImposeSetSpTrackInfo
+- sceCustomMusicCoreRegisterAppExFunctionTable
+- sceCustomMusicCoreRegisterSpImposeFunctionTable
+- sceCustomMusicCoreSendEvent
+- sceCustomMusicCoreSendMulticastEvent
+
+The 13.52 Core module exports all 19 NIDs imported by Spotify's eboot2.bin, including 9 whose public plaintext names are not yet fully mapped.

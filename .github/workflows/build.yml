@@ -1,0 +1,40 @@
+name: Build MetroMusic PS4 Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'main.c'
+      - 'Makefile'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build PS4 PKG with OpenOrbis
+        uses: OpenOrbis/toolchain-action@main
+        with:
+          version: v0.5.4
+          command: make
+
+      - name: Show build outputs
+        run: ls -lah && find . -maxdepth 2 -type f \( -name '*.pkg' -o -name 'eboot.bin' -o -name '*.elf' \) -print
+
+      - name: Upload PKG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MetroMusic-CustomMusicCore-Probe-v0.1
+          path: |
+            *.pkg
+            eboot.bin
+          if-no-files-found: error
+          retention-days: 14
