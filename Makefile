@@ -1,10 +1,9 @@
 TITLE       := MetroMusic CustomMusicCore Probe
-VERSION     := 0.13
+VERSION     := 0.14
 TITLE_ID    := BREW00991
 CONTENT_ID  := IV0000-BREW00991_00-METROMUSICPROBE0
 
 LIBS        := -lc -lkernel
-
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 INTDIR      := build
 CFILES      := $(wildcard *.c)
@@ -35,14 +34,6 @@ $(INTDIR)/%.o: %.c
 	@mkdir -p $(INTDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
-sce_module/libc.prx:
-	@mkdir -p sce_module
-	cp $(TOOLCHAIN)/bin/data/modules/libc.prx $@
-
-sce_module/libSceFios2.prx:
-	@mkdir -p sce_module
-	cp $(TOOLCHAIN)/bin/data/modules/libSceFios2.prx $@
-
 sce_sys/param.sfo: Makefile
 	@mkdir -p sce_sys
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_new $@
@@ -57,6 +48,9 @@ sce_sys/param.sfo: Makefile
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
 
+sce_module/libc.prx sce_module/libSceFios2.prx:
+	@test -s "$@" || (echo "ERRO: runtime PRX ausente: $@"; exit 1)
+
 pkg.gp4: eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx
 	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
 
@@ -64,4 +58,4 @@ $(CONTENT_ID).pkg: pkg.gp4
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
 
 clean:
-	rm -rf build eboot.bin pkg.gp4 sce_module $(CONTENT_ID).pkg
+	rm -rf build eboot.bin pkg.gp4 sce_sys/param.sfo $(CONTENT_ID).pkg

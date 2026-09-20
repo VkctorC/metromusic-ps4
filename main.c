@@ -42,13 +42,13 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
 
     printf("\n========================================\n"
-           " MetroMusic Probe v0.13 - BOOT\n"
+           " MetroMusic Probe v0.14 - BOOT\n"
            "========================================\n");
 
     g_log = sceKernelOpen(LOG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0777);
 
     log_text("\n========================================\n"
-             " MetroMusic CustomMusicCore Probe v0.13\n"
+             " MetroMusic CustomMusicCore Probe v0.14\n"
              " PS4 firmware alvo: 13.52\n"
              "========================================\n\n");
 

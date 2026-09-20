@@ -24,69 +24,93 @@ jobs:
             -w /workspace \
             ubuntu:20.04 \
             bash -lc '
-              set -e
-
+              set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y \
-                build-essential \
-                clang-12 \
-                lld-12 \
-                libicu66 \
-                libssl1.1 \
-                ca-certificates \
-                curl \
-                tar
+                build-essential clang-12 lld-12 \
+                libicu66 libssl1.1 ca-certificates \
+                curl tar jq unzip
 
               update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 100
               update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-12 100
 
               mkdir -p /tmp/openorbis
-
               curl -fL \
                 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
                 -o /tmp/openorbis.tar.gz
-
               tar -xzf /tmp/openorbis.tar.gz -C /tmp/openorbis
 
-              OO_PS4_TOOLCHAIN=$(find /tmp/openorbis \
-                -type f \
-                -path "*/bin/linux/create-fself" \
-                -print \
-                | head -n1 \
-                | sed "s#/bin/linux/create-fself##")
-
-              if [ -z "$OO_PS4_TOOLCHAIN" ]; then
-                echo "ERRO: create-fself não encontrado"
-                exit 1
-              fi
-
+              OO_PS4_TOOLCHAIN=$(find /tmp/openorbis -type f -path "*/bin/linux/create-fself" -print | head -n1 | sed "s#/bin/linux/create-fself##")
+              test -n "$OO_PS4_TOOLCHAIN"
               export OO_PS4_TOOLCHAIN
-
               chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/* || true
 
-              mkdir -p sce_sys
-
+              mkdir -p sce_sys sce_module
               curl -fL \
                 https://raw.githubusercontent.com/OpenOrbis/OpenOrbis-PS4-Toolchain/master/samples/hello_world/sce_sys/icon0.png \
                 -o sce_sys/icon0.png
+
+              # v0.5.4 toolchain asset currently may omit the two app-local runtime PRXs.
+              # First search the extracted toolchain in case their layout changes again.
+              LIBC=$(find /tmp/openorbis -type f -name libc.prx -print | head -n1 || true)
+              FIOS=$(find /tmp/openorbis -type f -name libSceFios2.prx -print | head -n1 || true)
+
+              if [ -z "$LIBC" ] || [ -z "$FIOS" ]; then
+                echo "Runtime PRXs not present in v0.5.4 asset; locating them in official v0.5 release assets..."
+                curl -fsSL \
+                  https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/tags/v0.5 \
+                  | jq -r ".assets[].browser_download_url" > /tmp/oo-assets.txt
+
+                n=0
+                while IFS= read -r url; do
+                  case "$url" in
+                    *.zip|*.tar.gz|*.tgz)
+                      n=$((n+1))
+                      rm -rf /tmp/oo-asset
+                      mkdir -p /tmp/oo-asset
+                      echo "Checking official asset: $url"
+                      if [[ "$url" == *.zip ]]; then
+                        curl -fL "$url" -o /tmp/asset.zip || continue
+                        unzip -q /tmp/asset.zip -d /tmp/oo-asset || continue
+                      else
+                        curl -fL "$url" -o /tmp/asset.tar.gz || continue
+                        tar -xzf /tmp/asset.tar.gz -C /tmp/oo-asset || continue
+                      fi
+
+                      LIBC=$(find /tmp/oo-asset -type f -path "*/bin/data/modules/libc.prx" -print | head -n1 || true)
+                      FIOS=$(find /tmp/oo-asset -type f -path "*/bin/data/modules/libSceFios2.prx" -print | head -n1 || true)
+                      if [ -n "$LIBC" ] && [ -n "$FIOS" ]; then
+                        break
+                      fi
+                      ;;
+                  esac
+                done < /tmp/oo-assets.txt
+              fi
+
+              if [ -z "$LIBC" ] || [ -z "$FIOS" ]; then
+                echo "ERRO: não encontrei libc.prx/libSceFios2.prx nos assets oficiais OpenOrbis"
+                exit 1
+              fi
+
+              echo "libc.prx: $LIBC"
+              echo "libSceFios2.prx: $FIOS"
+              cp "$LIBC" sce_module/libc.prx
+              cp "$FIOS" sce_module/libSceFios2.prx
+              ls -lh sce_module/
 
               make
             '
 
       - name: Show outputs
         run: |
-          find . -maxdepth 3 -type f \( \
-            -name '*.pkg' -o \
-            -name 'eboot.bin' -o \
-            -name '*.elf' \
-          \) -print -exec ls -lh {} \;
+          find . -maxdepth 3 -type f \( -name '*.pkg' -o -name 'eboot.bin' -o -name '*.elf' -o -name '*.prx' \) -print -exec ls -lh {} \;
 
       - name: Upload PKG
         uses: actions/upload-artifact@v4
         with:
-          name: MetroMusic-CustomMusicCore-Probe-v0.1
+          name: MetroMusic-CustomMusicCore-Probe-v0.14
           path: |
             *.pkg
             eboot.bin
